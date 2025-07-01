@@ -1,0 +1,1274 @@
+---
+title: "MicroRNAs in Generation R"
+subtitle: "A comprehensive guide on the preprocessing, QC, normalization, and construction of microRNA data in Generation R"
+author: 
+  - Vid Prijatelj, Midas M. Kuilman, Tim Finke
+  - "PI: Charlotte A. M. Cecil"
+  - Version 2
+date: "`r format(Sys.Date(), format = '%d %B %Y')`"
+output: 
+  word_document:
+    toc: true
+    toc_depth: 4
+bibliography: 
+  - refs_doc.bib
+  - r-references.bib
+csl: apa.csl
+nocite: |
+  @noauthor_epigeneticsepigeneticsage0epicdnam_age0_epic_prepr_nodate  
+  @noauthor_timfinkemirna_qc_nodate  
+  @noauthor_nextseq_nodate
+---
+
+
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+source("./render_toc.R")
+```
+
+
+```{r toc, echo = FALSE}
+# \newpage
+
+# # Table of Contents
+#render_toc("MicroRNA for Dummies.Rmd")
+```
+
+\newpage
+
+# Introduction
+
+This document describes the preprocessing and normalization pipeline for miRNA expression data. Key steps include data loading, QC filtering, winsorization, normalization, and addressing technical biases such as plate effects. Additional steps involve principal component analysis (PCA) to assess data structure and correlations between PCs and relevant covariates as well as the investigation of haemolysis-related miRNAs, ensuring that the miRNA expression data is appropriately adjusted for downstream analysis. The steps explained in this document have been written as part of the first miRNA-project in Generation R, *Circulating MicroRNA profiles associated with gestational age: Development and validation of a new epigenetic clock in a prospective birth cohort* [preregistration, @finke_circulating_2025]. An updated citation will be added in the third version of this document after publication of the study. The preregistration of this study can be found [at the Open Science Framework](https://osf.io/7yb4m) and scripts are available on [GitHub](https://github.com/TimFinke/miRNA_QC). For questions regarding the data, one should contact the leading PI, Charlotte Cecil, or Tim Finke.
+
+## Participant selection
+
+Our data includes participants from the population-based prospective Generation R Study [@kooijman_generation_2016]. The Generation R Study investigates early environmental and genetic factors and causal pathways leading to normal and abnormal growth, development and health from fetal life until adulthood. A total of 9778 pregnant women residing in the area of Rotterdam, with delivery dates between April 2002 and January 2006 were enrolled in the study. Comprehensive data were collected from children and parents through questionnaires, interviews, physical and ultrasound examinations, behavioural observations, and biological sampling. Out of this cohort, a subset of 1710 participants was selected for miRNA sequencing of umbilical cord blood-derived plasma, based on availability of (i) DNA methylation profiles already estimated at birth in Generation R, (ii) follow-up data in later waves of data collection, and (iii) not having a sibling that was already in the subset. After data cleaning, the sample contains **1695 participants with miRNA data**.
+
+## Description of the lab process
+
+Plasma circulating miRNA was collected from umbilical cord blood at birth and frozen at -80 °C. The samples of 1710 participants were randomized across 18 plates, consisting of 95 participant samples and a single control sample on each plate. 
+Regarding sample collection and library preparation: samples were thawed and subsequently centrifuged and separated for next-generation sequence analysis through use of HTG EdgeSeq miRNA Whole Transcriptome Assay in accordance with the manufacturer’s instructions. These are described in more detail elsewhere [@tran_assessment_2021]. In short, 15 µL of plasma was mixed with an equal volume of lysis buffer, followed by the addition of Proteinase K (1/10th of lysate volume) and incubation at 50°C for 180 minutes. Prepared samples (25 µL per well) were pipetted into the HTG barcoded sample plate, with probe capture running for 20 hours. Samples were then stored at −20°C or processed immediately. For PCR, a 21 µL master mix was used, with cycling conditions: 95°C for 4 min, 16 cycles of 95°C for 15 sec, 56°C for 45 sec, and 68°C for 45 sec, followed by 68°C for 10 min and hold at 4°C. Library cleanup involved incubating 37.5 μL of AMPure XP beads (Beckman Coulter, Inc., Pasadena, California, USA) with 15 μL of PCR-amplified libraries. Libraries were quantified using the KAPA Library Quant kit (Roche, Basel, Switzerland) and qPCR (95°C for 5 min, 35 cycles of 95°C for 30 sec and 60°C for 45 sec). The HTG Library Calculator (v1.3) determined final dilution volumes. Diluted libraries were pooled, spiked with PhiX control libraries, and loaded into the NextSeq 2000 P2 flow cell.
+
+Sequencing was performed on NextSeq 2000 (Illumina Inc., San Diego, California, USA) using a single end 50 base-pair approach. Demultiplexing was done with bcl-convert in DRAGEN Host Software (Version 07.021.624.3.10.11), and data quality and integrity was assessed using [Illumina Sequencing Analysis Viewer, with >90% of bases exceeding PHRED Q30](https://emea.illumina.com/systems). HTG EdgeSeq parser software processed fastq files, aligning reads to a custom FASTA file containing 2,102 sequences. Bowtie2 aligner was used to ensure a non-greedy, conservative alignment [@langmead_fast_2012], with an overall alignment rate >85%, independently replicated in our compute environment. The miRNA probe list was based on miRBase v20 [@kozomara_mirbase_2019].
+Initial post-sequencing quality control (QC) of aligned data was performed using HTG EdgeSeq spreadsheet developed for Microsoft Excel (Microsoft Inc., Redmond, Washington, USA). Three metrics were checked: RNA degradation or poor quality (QC0), low read depth (QC1), and non-biological library variability (QC2). While no samples failed QC0, one participant sample and one control sample (on plate 12) failed QC1 and 14 participant samples as well as 2 control samples (on plates 8 and 17) failed QC2. **This resulted in a final dataset of 1695 participants with expression data for 2083 miRNAs.** Read counts were first normalized using trimmed mean of M-values (TMM) [@robinson_scaling_2010], after which they were scaled to counts per million (CPM) and subsequently log-transformed.
+
+## An overview of the generated microRNA datasets in Generation R
+
+```{r overview, echo = FALSE, out.width = '100%'}
+
+knitr::include_graphics("Diagram_miRNAs_fix.png")
+
+```
+
+In addition to the original dataset, 5 datasets have been constructed with microRNA counts, 1 dataset containing covariates inherent to the microRNA sequencing-process, as well as 1 dataset containing descriptives on the two datasets with log-transformed counts. The original (unmodified) data has been archived as well as the raw counts which have undergone QC. The other datasets are available on the GenB-server. Below is a brief desription of each dataset, including reasons why users may or may not want to use these in their analyses: \
+
+1. **Original dataset** \
+*miRNA_GenR_original.xlsx* \
+Not accessible to users and not to be used for analyses, archive only. \
+2. **Cleaned counts dataset** \
+*miRNA_GenR_cleaned.xlsx* \
+Not accessible to users and not to be used for analyses, archive only. This dataset has gone through basic QC filtering described in the chapter [Applying Quality Control]. This dataset would be useful if you are interested in trying different ways of normalizing the miRNA expression data than already present. \
+3. **TMM-normalized counts dataset** \
+*miRNA_GenR_counts_TMM.xlsx* \
+Accessible on the GenB-server. TMM-normalized expression data that has not been corrected for outliers through winsorization as explained in the chapter [TMM-normalization]. This data may be used if you desire to use TMM-normalized data, yet do not want to have expression levels approximating normal distributions (e.g. negative binomial regression model with miRNA expression as the outcome) and are accounting for outliers in different ways than winsorization. \
+4. **TMM-normalized & winsorized counts dataset** \
+*miRNA_GenR_counts_TMM_WIN.xlsx* \
+Accessible on the GenB-server. TMM-normalized expression data that has been corrected for outliers through winsorization as explained in the chapter [TMM-normalization], specifically the section [Winsorization to address outliers]. This data may be used if you desire to use winsorized & TMM-normalized data, yet do not want to have expression levels approximating normal distributions (e.g. negative binomial regression model with miRNA expression as the outcome). \
+5. **TMM-normalized & log-transformed counts dataset** \
+*miRNA_GenR_counts_TMM_logCPM.xlsx* \
+Accessible on the GenB-server. TMM-normalized and log-transformed expression data that has not been corrected for outliers through winsorization as explained in the chapter [TMM-normalization]. This data may be used if you desire to use miRNA expression as a variable in a model explaining its' relation to an outcome and are accounting for outliers in different ways than winsorization. \
+6. **TMM-normalized, winsorized & log-transformed dataset** \
+*miRNA_GenR_counts_TMM_WINB_logCPM.xlsx* \
+Accessible on the GenB-server. TMM-normalized and log-transformed expression data that has been corrected for outliers through winsorization as explained in the chapter [TMM-normalization], specifically the section [Winsorization to address outliers]. This data may be used if you desire to use miRNA expression as a variable in a model explaining its' relation to an outcome. \
+7. **Covariate dataset** \
+*miRNA_GenR_covariates.xlsx* \
+Accessible on the GenB-server. Potential confounders that are discussed further in the chapter [Covariates]. This dataset contains only potential confounders that were generated together with the original miRNA expression data; e.g. haemolysis or miRNA concentration levels prior to dilution. Other potential confounders that are discussed in this document and which are not generated together with the original data, e.g. methylation-derived white blood cell type proportions, are not included in this dataset. \
+8. **Descriptives dataset** \
+*miRNA_GenR_descriptives.xlsx* \
+Accessible on the DataWiki. Summary statistics containing descriptives on the two TMM-normalized datasets (3 & 4) prior to log-transformation. This is further discussed in the chapter [Descriptive summary statistics on miRNAs]. \
+
+
+\newpage
+
+# A walkthrough of the process
+
+## Libraries & Functions
+
+```{r libraries, include = TRUE, message = FALSE}
+library("tidyverse")
+library("haven")
+library("edgeR")
+library("openxlsx")
+library("flextable")
+library("corrplot")
+library("ggcorrplot")
+library("cowplot")
+
+
+"%!in%" <- function(x, y) {!("%in%"(x, y))}
+
+# Winsorization
+# Origin: https://github.com/inDEPTHlab/epigenetics/blob/main/epigenetics/age0/epic/dnam_age0_epic_prep.R
+"winsorize" <- function(x, 
+                        probs = NULL, 
+                        cutpoints = NULL , 
+                        replace = c(cutpoints[1], cutpoints[2]), 
+                        verbose = FALSE){
+  dummy = is.integer(x)
+  if (!is.null(probs)){
+    stopifnot(is.null(cutpoints))
+    stopifnot(length(probs)==2)
+    cutpoints <- quantile(x, probs, type = 1, na.rm = TRUE)
+  } else if (is.null(cutpoints)){
+    l <- quantile(x, c(0.25, 0.50, 0.75), type = 1, na.rm = TRUE) 
+    cutpoints <- c(l[1]-3*(l[3]-l[1]), l[3]+3*(l[3]-l[1]))  ### Default was Median+-3*IQR but has been changed to +-1*IQR+-3*IQR
+  } else{
+    stopifnot(length(cutpoints)==2)
+  }
+  if (is.integer(x)) cutpoints <- round(cutpoints)
+  bottom <- x < cutpoints[1]
+  top <- x > cutpoints[2]
+  if (verbose){
+    length <- length(x)
+    message(paste(100*sum(bottom, na.rm = TRUE)/length,"% observations replaced at the bottom"))
+    message(paste(100*sum(top, na.rm = TRUE)/length,"% observations replaced at the top"))
+  }
+  x[bottom] <- replace[1]
+  x[top] <- replace[2]
+  if (dummy){
+    x <- as.integer(x)
+  }
+  x
+}
+# Make correlation matrix
+"make_cor_matrix" <- function(dataset1, dataset2, 
+                              title = title){
+  # Bind into 1 dataframe
+  xx <- cbind.data.frame(dataset1, dataset2)
+  
+  # correlations & P values
+  corr_covs_PCs <- cor(xx, use = "pairwise.complete.obs")
+  corr_covs_PCs_Pvals <- cor.mtest(xx, conf.level = .95)$p
+  
+  # Construct figure
+  ggcorrplot(corr_covs_PCs, hc.order = FALSE,
+             title = title,
+             p.mat = corr_covs_PCs_Pvals,
+             sig.level = .05,
+             insig = "blank",
+             outline.color = "white",
+             type = "upper",
+             ggtheme = ggplot2::theme_classic,
+             colors = c("#E46726", "white", "#6D9EC1"),
+             lab = TRUE
+             ) +
+    theme(plot.title = element_text(hjust = 0.5, size = 25))
+}
+
+```
+
+For the entire process of the data QC, normalisation, and construction of the microRNA datasets, as well as the construction of this guide, we used `r papaja::cite_r("./r-references.bib")`.
+
+\newpage
+
+## Loading raw data
+
+```{r load-data}
+# Path to folder
+path <- "./data"
+# path to archived data
+if(!dir.exists(file.path(path, "data_clean/"))){
+  dir.create(file.path(path, "data_clean/"))
+}
+if(!dir.exists(file.path(path, "data_clean/archived/"))){
+  dir.create(file.path(path, "data_clean/archived/"))
+}
+# path to DataWiki
+if(!dir.exists(file.path(path, "data_clean/DataWiki/"))){
+  dir.create(file.path(path, "data_clean/DataWiki/"))
+}
+# path to archived data
+if(!dir.exists(file.path(path, "data_clean/GenB/"))){
+  dir.create(file.path(path, "data_clean/GenB/"))
+}
+
+# IDCs
+df_QCres <- read_sav(file.path(path, "QCresults_miRNA_allPlates_IDC.sav"))
+# general data
+df_gen <- read_sav(file.path(path, "CHILD-ALLGENERALDATA_05122024.sav"))
+# ethnicity data
+df_ethv3 <- read_sav(file.path(path, "ethnicity/PCA_Selection GWAv3_revised def_October2022.sav"))[, c(1, 3, 5, 6)]
+colnames(df_ethv3)[c(3,4)] <- c("GWAv3C1", "GWAv3C2")
+# cell type methylation data
+MethylEPIC1 <- read_sav(file.path(path, "Cell_types/Selection_GENR_MethylEPIC_release1_birth_20230717.sav"))
+load(file.path(path, "Cell_types/GENR_EPICv1METH_birth_CellTypes_combined.RData"))
+Methyl450k3 <- read_sav(file.path(path, "Cell_types/Selection_GENR_450kmeth_release3_birth_20230608.sav"))
+Methyl450k3_Salas <- read.csv(file.path(path, "Cell_types/GENR_450kmeth_release3_birth_Salas.csv"))
+
+Methyl450k3$SampleID <- Methyl450k3$Sample_ID
+Methyl450k3_Salas$SampleID <- Methyl450k3_Salas$Rownames
+Methyl450k3$Sample_ID <- NULL
+Methyl450k3_Salas$Rownames <- NULL
+
+Methyl_450k_merged <- left_join(Methyl450k3, Methyl450k3_Salas, by = "SampleID")
+Methyl_EPIC_merged <- left_join(MethylEPIC1, GENR_EPICv1METH_birth_CellTypes_combined.data, by = "SampleID")
+Methyl_450k_merged[, c(2:5)] <- NULL
+Methyl_EPIC_merged[, c(2, 4)] <- NULL
+Methyl_merged <- rbind.data.frame(Methyl_450k_merged, Methyl_EPIC_merged)
+
+# Read in data per plate
+dataframes <- list()
+
+n_plates <- 17 # first 17 plates, plate 18 newest version is under the name plate 20!!
+
+for (i in c(1:n_plates, 20)) {
+  ### Read in haemolysis
+  ### Define parameters first, i.e., file name etc
+  haemolysis_file <- paste0("Plate", i, "_Haemolysis.csv")
+  name_haemolysis <- paste0("Plate", i, "_Haemolysis")
+  ### Read in haemolysis matrix (8x12), translate as a matrix
+  haemolysis <- as.matrix(read.csv(file = file.path(path, haemolysis_file), header = T, row.names = 1))
+  ### Assign a well name to each well; QC step
+  names(haemolysis) <- paste0(LETTERS[rep((1:8), 12)], rep(1:12, each = 8))
+  ### Translate (8x12) matrix into a 96-element vector
+  haemolysis <- c(haemolysis)
+  assign(x = name_haemolysis, value = haemolysis)
+  
+  ### Read in concentrations
+  ### Define parameters first, i.e., file name etc
+  concentration_file <- paste0("Plate", i, "_Concentrations.csv")
+  name_concentration <- paste0("Plate", i, "_Concentration")
+  concentration <- read.csv(file = file.path(path, concentration_file), header = F, row.names = 1)
+  colnames(concentration) <- c("Concentration")
+  concentration$Well <- as.character(paste0(LETTERS[rep((1:8), 12)], rep(1:12, each = 8)))
+  ### Translate into a 96-element vector
+  concentration <- c(concentration)
+  assign(x = name_concentration, value = concentration)
+  
+  ### Read in counts file
+  ### Define parameters first, i.e., file name etc
+  name_file <- paste0("Plate", i, ".csv")
+  name <- paste0("Plate", i)
+  table <- read.csv(file = file.path(path, name_file), header = T)
+  
+  ### Add haemolysis information into the last column, named #Haemolysis
+  table$Haemolysis <- haemolysis
+  table$Concentration <- concentration$Concentration
+  
+  assign(x = name, value = table)
+  dataframes[[i]] <- get(name)
+}
+
+# All plates in 1 dataframe
+df <- do.call("rbind", dataframes)
+# Refactor Wells into each well being its own factor
+df$Well <- factor(df$Well, levels = paste0(LETTERS[rep((1:8), 12)], rep(1:12, each = 8)))
+
+### merge df with df_QCres
+# Matching colnames for df & df_QCres
+df_QCres$Sample.Name <- df_QCres$Sample
+df_QCres$Sample <- NULL
+# Join on Sample.Name and Well
+df <- df %>% left_join(., df_QCres, by = c("Sample.Name", "Well"))
+
+# save original data
+original_data <- df[, c(2108, 1:2103)]
+#write.xlsx(original_data, file.path(path, "data_clean/archived/miRNA_GenR_original.xlsx"), 
+#           colNames = TRUE, rowNames = FALSE,
+#           overwrite = FALSE)
+
+
+# save dataset covariates
+covariate_cols <- c("IDC", "Sample.Name", "Plaat", "Well", 
+                    "Concentration", "Haemolysis", "QCStatus", "POS", 
+                    "RawTotalCounts", "RSD", "indexplaat")
+covariates <- df[, covariate_cols]
+
+#write.xlsx(covariates, file.path(path, "data_clean/GenB/miRNA_GenR_covariates.xlsx"),
+#           sheetName = c("covariates"),
+#           colNames = TRUE, rowNames = FALSE,
+#           overwrite = FALSE)
+```
+
+In this step, we loaded the raw microRNA count data for every plate and merged this data into one a single .xlsx-file. Furthermore, we merged metadata like QC results, haemolysis, concentration, methylation-derived cell type proportions and technical covariates into a single dataframe for checks later in the pipeline.
+
+\newpage
+
+## Applying Quality Control
+
+```{r QC, include = TRUE}
+### Implement filters here for HK- & control genes, controls, QC status failures etc
+# dropping HK and control genes
+df <- df[, -c(2:20)]
+# dropping controls
+controls <- df %>% filter(., grepl("pl", Sample.Name) | 
+                            grepl("Control", Sample.Name) | 
+                            grepl("control", Sample.Name) | 
+                            grepl("ctrl", Sample.Name)
+                          )
+df <- df %>% filter(., Sample.Name %!in% controls$Sample.Name)
+# dropping all samples that did not pass QCStatus1 or QCStatus2
+df_QC_Fail <- df %>% filter(., QCStatus != "PASS") # 18, of which 3 controls and 15 participants, hence N = 1695
+df <- df %>% filter(., QCStatus == "PASS")
+
+# Make df technical covariates (columns 2085 - 2094)
+cols_tech_covs <- which(names(df) %in% c(covariate_cols[-c(2)])) # c(2085:2094)
+df_tech_covs <- df[, c(1, cols_tech_covs)]
+df_tech_covs <- left_join(df_tech_covs, Methyl_merged, by = "IDC") # methylation data
+df_tech_covs <- left_join(df_tech_covs, df_ethv3, by = "IDC") # ethnicity data
+df_gen <- df_gen[, c("IDC", "GESTBIR", "GENDER", "WEIGHT")] # add sex, GA, and weight to tech covariate df
+df_tech_covs <- left_join(df_tech_covs, df_gen, by = "IDC")
+
+# construct standardized variables for 
+df_tech_covs$C1_scaled <- scale(df_tech_covs$GWAv3C1, center = TRUE, scale = TRUE)
+df_tech_covs$C2_scaled <- scale(df_tech_covs$GWAv3C2, center = TRUE, scale = TRUE)
+
+# set plate and gender as factors
+#df_tech_covs$Plaat <- df_tech_covs$Plaat %>% as.factor()
+#df_tech_covs$GENDER <- df_tech_covs$GENDER %>% as.factor()
+
+# drop covariate_cols from df
+extracted_counts <- df[, -c(cols_tech_covs)]
+#[, -covariate_cols]
+
+# set Sample.Name as rowname and remove column from extracted_counts
+extracted_counts <- extracted_counts %>% t()
+colnames_extracted_counts <- extracted_counts[1, ]
+colnames(extracted_counts) <- extracted_counts[1, ]
+extracted_counts <- extracted_counts[-1, ]
+counts <- data.frame(apply(extracted_counts, 2, function(x) as.numeric(as.character(x))))
+rownames(counts) <- rownames(extracted_counts)
+colnames(counts) <- colnames_extracted_counts # code line 127 does something weird with the colnames (puts X. in there), fix
+
+# Rename to raw_counts for merging
+raw_counts <- counts
+
+# merge with IDC column
+cleaned_counts <- cbind.data.frame(colnames(raw_counts), t(raw_counts))
+colnames(cleaned_counts)[1] <- "Sample.Name"
+cleaned_counts <- left_join(cleaned_counts, original_data[, c(1:2)], by = "Sample.Name")[, c(2085, 1:2084)]
+
+# save cleaned raw counts for archive
+#write.xlsx(cleaned_counts, file.path(path, "data_clean/archived/miRNA_GenR_cleaned.xlsx"), 
+#           colNames = TRUE, rowNames = FALSE,
+#           overwrite = FALSE)
+
+# remove surplus datasets, plates etc
+rm(list = ls(pattern = "^Plate\\d+(_Concentration|_Haemolysis)?$"), 
+   table, dataframes, concentration, concentration_file, 
+   haemolysis, haemolysis_file, i, n_plates, name, 
+   name_concentration, name_file, name_haemolysis, 
+   df_QCres, counts, df, extracted_counts, 
+   colnames_extracted_counts, covariate_cols, cols_tech_covs,
+   Methyl450k3, Methyl450k3_Salas, MethylEPIC1, 
+   GENR_EPICv1METH_birth_CellTypes_combined.data, 
+   Methyl_450k_merged, Methyl_EPIC_merged, Methyl_merged,
+   df_ethv3, df_gen)
+
+```
+
+We removed control genes, house keeping genes, and control samples (HK, "pl", "Control", "control", "ctrl") as these were used during the lab QC-process only and will not be considered for analyses. Additionally, the initial post-sequencing quality control of aligned data marked samples as QC-failures according to three metrics: RNA degradation or poor quality (QC0), low read depth (QC1), and non-biological library variability (QC2). While no samples failed QC0, one participant sample and one control sample (on plate 12) failed QC1 and 14 participant samples as well as 2 control samples (on plates 8 and 17) failed QC2. We filtered out these low-quality samples, ensuring only high-quality, non-control samples are included. Hence, after removal of 18 control samples and 15 participant samples that did not pass QC-filters, we are left with a dataset of 1695 samples to be normalized. \
+
+\newpage
+
+## TMM-normalization
+
+### Creating a DGE-list object & examining miRNA expression level filters
+
+```{r create-DGEList, warning = FALSE}
+dge <- DGEList(counts = raw_counts)
+
+# Filter out lowly expressed miRNAs using edgeR's `filterByExpr` function
+# base settings of function are: min.count = 10, min.total.count = 15, large.n = 10, min.prop = 0.7
+keep <- filterByExpr(dge,
+                     min.count = 10, 
+                     min.total.count = 15, 
+                     large.n = 10, 
+                     min.prop = 0.7)
+#table(keep) # filters only 1 miRNA, miR.513b.5p 
+# base settings of function are: min.count = 10, min.total.count = 15, large.n = 10, min.prop = 0.7
+keep2 <- filterByExpr(dge,
+                     min.count = 15, 
+                     min.total.count = 15, 
+                     large.n = 10, 
+                     min.prop = 0.7)
+#table(keep2) # 57 miRNAs filtered if min.count upped from 10 to 15 counts
+dge_filtered <- dge[keep, keep.lib.sizes = FALSE] # Filter on expression level miRNAs
+dge_filtered2 <- dge[keep2, keep.lib.sizes = FALSE] # Filter on expression level miRNAs
+
+```
+
+Initially we intended to follow the QC- and normalization process of the microRNA data present in the Rotterdam Study [@ikram_objectives_2020], a population study of older adults which also generated a large dataset of circulating miRNA profiles using HTG EdgeSeq. In their QC pipeline, they removed a lot of miRNAs due to low expression levels, to prioritize biomarker discovery in case-control analyses. They applied a filter based on a monotonic decreasing spline curve between means and standard deviations of all miRNAs to determine the lower limit of quantification (LLOQ). They considered miRNAs as well-expressed when at least >50% of samples scored above LLOQ, resulting in 591 miRNAs filtered out of the initial 2083 [@yaqub_genome-wide_2023]. In contrast, given our focus on dimensional analyses with continuous exposures/outcomes in Generation R (a developmental cohort), we decided not to remove any miRNAs, as explained in detail below. However, we should at least have a look at how our dataset would be affected if we filtered based on miRNA expression levels (albeit via an alternative manner than Rotterdam Study). The code in the chunk above applies an initial filtering step to remove lowly expressed miRNAs. The code creates an edgeR DGEList object using the raw counts. Using edgeR's filterByExpr function, we tested two different filtering thresholds: the default threshold (min.count = 10) would remove only one miRNA (`r gsub(".", "-", names(keep[keep == F]), fixed = TRUE)`), and a stricter threshold (min.count = 15), which would have removed 57 miRNAs. These are `r gsub(".", "-", names(keep2[keep2 == F]), fixed = TRUE)`. \
+
+**We decided to not filter out any miRNAs**, given that on the one hand only 1 would be removed based on default settings, and on the other, we did not want to remove a large number of miRNAs based on the stricter setting, since we do not yet know whether these miRNAs could be biologically meaningful despite their low variability (e.g. may be variable in a subsample of individuals with particular exposure or outcome). We do, however, caution users about this, and **encourage users to carefully check miRNAs of interest for variability** and how many miRNAs in future results show relatively low expression levels (e.g. based on the above list using a stricter threshold). These miRNAs may be considered when interpretating results. Below a figure portraying the total raw counts over all miRNAs for each sample (A-plots) and the total raw counts over all samples for each miRNA (B-plots). Clearly the stricter filtering does not affect the normal distribution in the sample-centered (A-)plots, as there seems to be no clear shift in the distributions. The miRNA total raw counts are skewed towards the lower amount (B-plots), indicating that most miRNAs have relatively low raw total counts. \
+
+```{r plot1, echo = FALSE, warning = FALSE, fig.width = 10, fig.height = 10, fig.cap = "Histograms visualizing distributions of total raw counts for each sample (A-plots) and each microRNA (B-plots). The x-axis on each figure has been capped for visuability. When comparing none (plot 1) or minimal (plot 2) microRNAs filtered to the application of a stricter threshold (plot 3), we see minimal changes in the total raw counts per sample (normal distribution remains intact) as well as per microRNA (slightly shorter bar left from the peak)."}
+plot_grid(
+  # Plot 1A: Histogram of total counts per sample before filtering to see initial expression distribution
+  ggplot(data.frame(total_counts = colSums(raw_counts)), aes(x = total_counts)) +
+    geom_histogram(bins = 150, color = "black", fill = "lightblue") +
+    ggtitle("Distribution of Total Counts per Sample",
+            subtitle = "Before Filtering") +
+    xlab("Total Counts per Sample") +
+    ylab("Frequency") +
+    scale_x_continuous(limits = c(0, 1e7)) + 
+     theme(
+   plot.title = element_text(hjust = 0.5),
+   plot.subtitle = element_text(hjust = 0.5)
+      ),
+  # Plot 1B: Histogram of total counts per microRNA before filtering to see initial expression distribution
+  ggplot(data.frame(total_counts = rowSums(raw_counts)), aes(x = total_counts)) +
+    geom_histogram(bins = 100, color = "black", fill = "lightblue") +
+    ggtitle("Distribution of Total Counts per MicroRNA",
+            subtitle = "Before Filtering") +
+    xlab("Total Counts per MicroRNA") +
+    ylab("Frequency") +
+    scale_x_continuous(limits = c(0, 3e6)) + 
+     theme(
+   plot.title = element_text(hjust = 0.5),
+   plot.subtitle = element_text(hjust = 0.5)
+                                #size = 22),
+      #axis.title = element_text(size = 15),
+      #legend.title = element_text(size = 15),
+      #legend.text = element_text(size = 12)
+      ),
+  # Plot 2A: Histogram of total counts per sample after filtering to check effect of `filterByExpr`
+  ggplot(data.frame(total_counts = colSums(dge_filtered$counts)), aes(x = total_counts)) +
+    geom_histogram(bins = 150, color = "black", fill = "lightgreen") +
+    ggtitle("Distribution of Total Counts per Sample",
+            subtitle = "After Default Filtering") +
+    xlab("Total Counts per Sample") +
+    ylab("Frequency") +
+    scale_x_continuous(limits = c(0, 1e7)) + 
+     theme(
+   plot.title = element_text(hjust = 0.5),
+   plot.subtitle = element_text(hjust = 0.5)
+      ),
+  # Plot 2B: Histogram of total counts per microRNA after filtering to check effect of `filterByExpr`
+  ggplot(data.frame(total_counts = rowSums(dge_filtered$counts)), aes(x = total_counts)) +
+    geom_histogram(bins = 100, color = "black", fill = "lightgreen") +
+    ggtitle("Distribution of Total Counts per MicroRNA",
+            subtitle = "After Default Filtering") +
+    xlab("Total Counts per MicroRNA") +
+    ylab("Frequency") +
+    scale_x_continuous(limits = c(0, 3e6)) + 
+     theme(
+   plot.title = element_text(hjust = 0.5),
+   plot.subtitle = element_text(hjust = 0.5)
+      ),
+  # Plot 3A: Histogram of total counts per sample after filtering to check effect of `filterByExpr`
+  ggplot(data.frame(total_counts = colSums(dge_filtered2$counts)), aes(x = total_counts)) +
+    geom_histogram(bins = 150, color = "black", fill = "orange") +
+    ggtitle("Distribution of Total Counts per Sample",
+            subtitle = "After Stricter Filtering") +
+    xlab("Total Counts per Sample") +
+    ylab("Frequency") +
+    scale_x_continuous(limits = c(0, 1e7)) +
+     theme(
+   plot.title = element_text(hjust = 0.5),
+   plot.subtitle = element_text(hjust = 0.5)
+      ),
+  # Plot 3B: Histogram of total counts per microRNA after filtering to check effect of `filterByExpr`
+  ggplot(data.frame(total_counts = rowSums(dge_filtered2$counts)), aes(x = total_counts)) +
+    geom_histogram(bins = 100, color = "black", fill = "orange") +
+    ggtitle("Distribution of Total Counts per MicroRNA",
+            subtitle = "After Stricter Filtering") +
+    xlab("Total Counts per MicroRNA") +
+    ylab("Frequency") +
+    scale_x_continuous(limits = c(0, 3e6)) +
+     theme(
+   plot.title = element_text(hjust = 0.5),
+   plot.subtitle = element_text(hjust = 0.5)
+      ),
+  ncol = 2, axis = "b",
+  byrow = TRUE, labels = c("1A", "1B", "2A", "2B", "3A", "3B"),
+  rel_widths = c(3,2)
+  )
+
+```
+
+\newpage
+
+### Normalization using TMM & Log-transformation
+
+```{r }
+
+dge <- calcNormFactors(dge, method = "TMM")
+
+TMM_CPM_orig <- cpm(dge, log = FALSE) %>% t(.) %>% as.data.frame()
+TMM_CPM_orig <- cbind.data.frame(rownames(TMM_CPM_orig), TMM_CPM_orig)
+colnames(TMM_CPM_orig)[1] <- "Sample.Name"
+TMM_CPM_orig <- left_join(TMM_CPM_orig, original_data[, c(1:2)], by = "Sample.Name")[, c(2085, 1:2084)]
+
+logCPM_orig <- cpm(dge, log = TRUE) %>% t(.) %>% as.data.frame()
+logCPM_orig <- cbind.data.frame(rownames(logCPM_orig), logCPM_orig)
+colnames(logCPM_orig)[1] <- "Sample.Name"
+logCPM_orig <- left_join(logCPM_orig, original_data[, c(1:2)], by = "Sample.Name")[, c(2085, 1:2084)]
+
+
+#write.xlsx(TMM_CPM_orig, file.path(path, "data_clean/GenB/miRNA_GenR_counts_TMM.xlsx"), 
+#           colNames = TRUE, rowNames = FALSE,
+#           overwrite = FALSE)
+
+#write.xlsx(logCPM_orig, file.path(path, "data_clean/GenB/miRNA_GenR_counts_TMM_logCPM.xlsx"), 
+#           colNames = TRUE, rowNames = FALSE,
+#           overwrite = FALSE)
+
+rownames(TMM_CPM_orig) <- TMM_CPM_orig[, 2]
+TMM_CPM_orig <- TMM_CPM_orig[, -c(1, 2)]
+
+rownames(logCPM_orig) <- logCPM_orig[, 2]
+logCPM_orig <- logCPM_orig[, -c(1, 2)]
+
+```
+
+There is no universal standard relating to normalization of miRNA data [@git_systematic_2010; @meyer_normalization_2010; @faraldi_free_2018], even though extensive comparisons of normalization methods do exist. Oftentimes this is due to differing distributional assumptions regarding the underlying data [@evans_selecting_2017]. After consideration of normalization methods for RNA sequencing data, we decided to go with Trimmed Mean of M-values (TMM)-normalization due to its relatively good performance on various metrics [@dillies_comprehensive_2013; @robinson_scaling_2010; li_choice_2020; @qin_statistical_2020]. At first, library sizes are calculated prior to normalization. Subsequently, **TMM-normalization is applied to adjust for library size differences** in the DGEList object. After normalization, the **miRNA counts are log-transformed** using the cpm function, producing a log2 counts-per-million (logCPM) matrix. Both of the TMM-normalized CPM dataset and the corresponding TMM-normalized logCPM dataset are saved as .xlsx-files. \
+
+\newpage
+
+### Winsorization to address outliers
+
+#### Reasons for winsorization
+
+There were two reasons to apply winsorization to our data. First, @li_exaggerated_2022 pointed out that [RNAseq data normalized using the edgeR TMM-method is vulnerable to exaggerated false positives](https://doi.org/10.1186/s13059-022-02648-4). @yang_winsorization_2024 in turn, showed that these [false positives can be mitigated through winsorizing RNA-seq counts prior to normalization](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-024-03230-w). Second, the miRNA data showed weird distributional patterns on plate 7 which in part can be related to high miRNA concentration levels prior to dilution of the sample with a buffer in the lab. As illustrated by the excerpts [from the miRNA QC-folder on isi-store](file://store/department/genr/isi-store/Genetics/miRNA/QC/). Further below is a series of plots on the effects the issues with plate 7 have had on the miRNA expression values. Given the varying distributional effects per miRNA, we deemed it unfeasible to come up with a correction method that addresses all issues. However, winsorization addresses most of them, as elaborated upon in the chapter [Plate 7 issues addressed by winsorization].
+
+```{r plate7_issue_1, echo = FALSE, out.width = '100%', fig.cap = "Excerpt from Plate7.pdf in the QC-folder. This image serves to highlight that a high miRNA concentration prior to dilution is related to a higher buffer added in the lab process."}
+
+knitr::include_graphics("plate 7 issues 2.png")
+
+```
+
+\
+
+
+```{r plate7_issue_2, echo = FALSE, out.width = '100%', fig.cap = "Excerpt from Plate7.pdf in the QC-folder. This image serves to highlight that a higher buffer added, and therefor also a high miRNA concentration prior to dilution, is quite randomly placed along plate 7. Highlighted in yellow are the samples containing miRNA concentration levels above 10000. The two samples that were crossed through were excluded prior due to their QC-status."}
+
+knitr::include_graphics("plate 7 issues 1.png")
+
+```
+
+
+\newpage
+
+
+#### Applying winsorization
+
+```{r winsor}
+# According to recommendations by https://genomebiology.biomedcentral.com/articles/10.1186/s13059-024-03230-w
+
+# Calculate TMM-normalized CPM that are not logtransformed for winsorization
+CPM <- cpm(dge, log = FALSE)
+
+# quantiles before TMM-normalization
+quantile(dge$counts, probs = c(0.025, 0.975), na.rm = TRUE) # 7  - 9196
+
+# 11 samples with extremely high concentrations (> 1000 uL) at plate 7, 11 / 1695 * 100 = ~0.65%
+# However 2 are not included in the sample due to QC status, corresponds to ~0.53%
+# 8 samples on plate 7 have also high but not as extreme as the others (100 - 700 uL), might be problematic but not sure
+# If so, we'd have 17 samples on plate 7 that are problematic, which corresponds to ~1% of samples
+CPM_winsorized <- t(apply(CPM, 1, winsorize, probs = c(0.025, 0.975), verbose = FALSE))
+
+quantile(CPM_winsorized, probs = c(0.025, 0.975), na.rm = TRUE) 
+
+```
+
+This step applies **winsorization to TMM-normalized (but non-log-transformed) CPM values, reducing the influence of extreme values while maintaining overall distribution integrity**. The quantiles of raw counts are assessed before winsorization. Winsorization is performed at the 2.5th and 97.5th percentiles (95% winsorization). Post-winsorization quantiles are re-evaluated to check the effect. This is in concordance with the article on winsorization of RNA-seq and its effect on false-positive findings by @yang_winsorization_2024. \
+
+The plots below were generated to compare miRNA expression before and after winsorization for the first three miRNAs in the dataset , including raw and log-transformed values, as well as plate-specific distributions. **This step mitigates the influence of extreme values, particularly in problematic samples from plate 7, which might otherwise unduly influence downstream analyses**. \
+
+```{r plots winsor, include = FALSE}
+# Examining first 6 miRNAs before and after winsorization
+plot(log(CPM[1, ]))
+plot(log(CPM_winsorized[1, ]))
+
+plot((CPM[1, ]), (CPM_winsorized[1, ]))
+plot((CPM[1, ]), df_tech_covs$Plaat)
+plot((CPM_winsorized[1, ]), df_tech_covs$Plaat)
+plot(log(CPM[1, ]), df_tech_covs$Plaat)
+plot(log(CPM_winsorized[1, ]), df_tech_covs$Plaat)
+
+plot((CPM[2, ]), (CPM_winsorized[2, ]))
+plot((CPM[2, ]), df_tech_covs$Plaat)
+plot((CPM_winsorized[2, ]), df_tech_covs$Plaat)
+plot(log(CPM[2, ]), df_tech_covs$Plaat)
+plot(log(CPM_winsorized[2, ]), df_tech_covs$Plaat)
+
+plot((CPM[3, ]), (CPM_winsorized[3, ]))
+plot((CPM[3, ]), df_tech_covs$Plaat)
+plot((CPM_winsorized[3, ]), df_tech_covs$Plaat)
+plot(log(CPM[3, ]), df_tech_covs$Plaat)
+plot(log(CPM_winsorized[3, ]), df_tech_covs$Plaat)
+
+plot((CPM[4, ]), (CPM_winsorized[4, ]))
+plot((CPM[4, ]), df_tech_covs$Plaat)
+plot((CPM_winsorized[4, ]), df_tech_covs$Plaat)
+plot(log(CPM[4, ]), df_tech_covs$Plaat)
+plot(log(CPM_winsorized[4, ]), df_tech_covs$Plaat)
+
+plot((CPM[5, ]), (CPM_winsorized[5, ]))
+plot((CPM[5, ]), df_tech_covs$Plaat)
+plot((CPM_winsorized[5, ]), df_tech_covs$Plaat)
+plot(log(CPM[5, ]), df_tech_covs$Plaat)
+plot(log(CPM_winsorized[5, ]), df_tech_covs$Plaat)
+
+plot((CPM[6, ]), (CPM_winsorized[6, ]))
+plot((CPM[6, ]), df_tech_covs$Plaat)
+plot((CPM_winsorized[6, ]), df_tech_covs$Plaat)
+plot(log(CPM[6, ]), df_tech_covs$Plaat)
+plot(log(CPM_winsorized[6, ]), df_tech_covs$Plaat)
+
+```
+
+\newpage
+
+#### Comparison unnormalized-winsorized dataset with original dataset and the renormalization & logtransformation of winsorized data
+
+```{r more winsor}
+# Compute effective library sizes
+effective_lib_sizes <- dge$samples$lib.size * dge$samples$norm.factors 
+
+# Recover raw counts from CPM & rounding
+raw_counts_winsor <- round(sweep(CPM_winsorized, 2, effective_lib_sizes, "*") / 1e6)
+
+# Ensure no negative values (edge case rounding issue)
+raw_counts_winsor[raw_counts_winsor < 0] <- 0  
+
+# Extract original raw counts
+original_counts <- dge$counts  
+
+# Summary statistics
+# Check correlation between original and reconstructed counts, 0.985031
+cor_results <- cor(as.vector(original_counts), as.vector(raw_counts_winsor), method = "pearson")
+
+#as.matrix(table(original_counts[c(1:2083), c(1:1695)] == raw_counts_winsor[c(1:2083), c(1:1695)]))
+
+# Descriptives original counts first 10 microRNAs
+desc_orig_counts <- cbind.data.frame(
+  as.data.frame(colnames(TMM_CPM_orig)[1:10]),
+  psych::describe(TMM_CPM_orig)[c(1:10), c(3, 4, 13, 5, 8:9, 11:12)]  %>%
+  round(., 2),
+  sapply(TMM_CPM_orig[, c(1:10)], quantile, probs = c(.25, .75)) %>% 
+    as.data.frame(.) %>% 
+    round(., 2) %>% 
+    t(.)
+  ) %>% select(., c(1:5, 10, 11, 6:9))
+
+colnames(desc_orig_counts)[1] <- "MicroRNA"
+
+#desc_orig_counts %>%
+#  flextable() %>%
+#  autofit()
+
+
+# Log TMM-normaize and logtransform winsorized data again
+dge_winsor <- DGEList(counts = raw_counts_winsor)
+dge_winsor <- calcNormFactors(dge_winsor, method = "TMM")
+
+TMM_CPM_winsor <- cpm(dge_winsor, log = FALSE) %>% t(.) %>% as.data.frame()
+logCPM_winsor <- cpm(dge_winsor, log = TRUE) %>% t(.) %>% as.data.frame()
+
+# Descriptives winsorized counts first 10 microRNAs
+desc_winsor_counts <- cbind.data.frame(
+  as.data.frame(colnames(TMM_CPM_winsor)[1:10]),
+  psych::describe(TMM_CPM_winsor)[c(1:10), c(3, 4, 13, 5, 8:9, 11:12)]  %>%
+  round(., 2),
+  sapply(TMM_CPM_winsor[, c(1:10)], quantile, probs = c(.25, .75)) %>% 
+    as.data.frame(.) %>% 
+    round(., 2) %>% 
+    t(.)
+  ) %>% select(., c(1:5, 10, 11, 6:9))
+
+colnames(desc_winsor_counts)[1] <- "MicroRNA"
+
+#desc_winsor_counts %>%
+#  flextable() %>%
+#  autofit()
+
+
+# Check correlation between original and winsorized logtransformed counts
+cor_results_log <- cor(unlist(as.vector(logCPM_orig)), unlist(as.vector(logCPM_winsor)), method = "pearson")
+
+```
+
+In the above code chunk we compared the winsorized dataset with the non-winsorized dataset for both raw count-values as well as normalized, log-transformed CPM-values. This should give some insight in the degree the winsorization altered the structure of the dataset when mitigating extreme values. The code reconstructs raw counts from the winsorized CPM values, ensures they remain integer-based and non-negative. It then re-applies TMM normalization and log-transformation to generate a winsorized logCPM dataset. \
+
+Effective library sizes are calculated to rescale winsorized CPM back to raw counts. Counts are subsequently rounded. This process affected the expression levels of `r as.matrix(table(original_counts[c(1:2083), c(1:1695)] == raw_counts_winsor[c(1:2083), c(1:1695)]))[1]` out of `r as.matrix(table(original_counts[c(1:2083), c(1:1695)] == raw_counts_winsor[c(1:2083), c(1:1695)]))[1] + as.matrix(table(original_counts[c(1:2083), c(1:1695)] == raw_counts_winsor[c(1:2083), c(1:1695)]))[2]` individual datapoints. The Pearson correlation between original and reconstructed raw counts was `r round(cor_results, 4)`. 
+
+A new DGEList object is created from the winsorized counts, with subsequent TMM-normalization, and log-transformation. The Pearson correlation between the original- and the winsorized logCPM values was `r round(cor_results_log, 4)`  \
+
+Below, the code for several scatterplots to compare original and winsorized logCPM values across samples, including visualization against plate variables. \
+
+```{r, include = FALSE}
+plot(logCPM_orig[, 1], logCPM_winsor[, 1])
+plot(logCPM_orig[, 1], df_tech_covs$Plaat)
+plot(logCPM_winsor[, 1], df_tech_covs$Plaat)
+
+plot(logCPM_orig[, 2], logCPM_winsor[, 2])
+plot(logCPM_orig[, 2], df_tech_covs$Plaat)
+plot(logCPM_winsor[, 2], df_tech_covs$Plaat)
+
+plot(logCPM_orig[, 3], logCPM_winsor[, 3])
+plot(logCPM_orig[, 3], df_tech_covs$Plaat)
+plot(logCPM_winsor[, 3], df_tech_covs$Plaat)
+
+plot(logCPM_orig[, 4], logCPM_winsor[, 4])
+plot(logCPM_orig[, 4], df_tech_covs$Plaat)
+plot(logCPM_winsor[, 4], df_tech_covs$Plaat)
+
+plot(logCPM_orig[, 5], logCPM_winsor[, 5])
+plot(logCPM_orig[, 5], df_tech_covs$Plaat)
+plot(logCPM_winsor[, 5], df_tech_covs$Plaat)
+
+plot(logCPM_orig[, 6], logCPM_winsor[, 6])
+plot(logCPM_orig[, 6], df_tech_covs$Plaat)
+plot(logCPM_winsor[, 6], df_tech_covs$Plaat)
+
+```
+
+```{r saving winsorized datasets}
+
+TMM_CPM_winsor_save <- TMM_CPM_winsor
+TMM_CPM_winsor_save <- cbind.data.frame(rownames(TMM_CPM_winsor_save), TMM_CPM_winsor_save)
+colnames(TMM_CPM_winsor_save)[1] <- "Sample.Name"
+TMM_CPM_winsor_save <- left_join(TMM_CPM_winsor_save, original_data[, c(1:2)], by = "Sample.Name")[, c(2085, 1:2084)]
+
+logCPM_winsor_save <- logCPM_winsor
+logCPM_winsor_save <- cbind.data.frame(rownames(logCPM_winsor_save), logCPM_winsor_save)
+colnames(logCPM_winsor_save)[1] <- "Sample.Name"
+logCPM_winsor_save <- left_join(logCPM_winsor_save, original_data[, c(1:2)], by = "Sample.Name")[, c(2085, 1:2084)]
+
+# saving datasets
+#write.xlsx(TMM_CPM_winsor_save, file.path(path, "data_clean/GenB/miRNA_GenR_counts_TMM_WIN.xlsx"), 
+#           colNames = TRUE, rowNames = FALSE,
+#           overwrite = FALSE)
+
+#write.xlsx(logCPM_winsor_save, file.path(path, "data_clean/GenB/miRNA_GenR_counts_TMM_WIN_logCPM.xlsx"), 
+#           colNames = TRUE, rowNames = FALSE,
+#           overwrite = FALSE)
+
+rm(TMM_CPM_winsor_save, logCPM_winsor_save)
+
+```
+
+\newpage
+
+#### Plate 7 issues addressed by winsorization
+
+Below are the expression levels of the first three miRNAs in the dataset (let-7a-2-3p, let-7a-3p, and let-7a-5p) visualized before (A-plots) and after winsorization (B-plots). On the x-axis we see the expression levels of each sample on the respective miRNA, on the y-axis the plate on which each sample is located. Red dots correspond to samples with miRNA concentration levels of at least 10000, indicating a high miRNA concentration prior to dilution of the sample with Illumina Resuspension Buffer (RSB). RSB is a [laboratory reagent designed to reconstitute and suspend DNA or other biomolecules](https://www.pubcompare.ai/product/oDHiCZIBPBHhf-iFsr8u/). From examining the A-plots, it is clear that high concentrations prior to dilution on plate 7 have heavily influenced corresponding miRNA expression levels. However, this effect is not unidirectional. For plot 1A, the miRNA expression levels are substantially higher, whereas for plot 2A there does not seem to be much of an effect. For plot 3A in turn, the effect does not seem to just be applied to the miRNA expression levels corresponding to high concentrations alone, rather the entire plates expression levels seem to be shifted lower with a gap where other plates have their expression levels (roughly from 10 upwards). Although winsorization does not address this gap in the third miRNA, the outliers on all three miRNAs are corrected for by applying winsorization.
+
+
+```{r, include = TRUE, echo = FALSE, fig.cap = "MiRNA expression distribution before (A) and after winsorization (B) for let-7a-2-3p (1), let-7a-30 (2), and let-7a-5p."}
+
+data_plotjes <- cbind.data.frame(logCPM_orig, df_tech_covs)
+data_plotjes$concentration_high <- ifelse(data_plotjes$Concentration >= 10000, "high", "low")
+
+data_plotjes_WIN <- cbind.data.frame(logCPM_winsor, df_tech_covs)
+data_plotjes_WIN$concentration_high <- ifelse(data_plotjes_WIN$Concentration >= 10000, "high", "low")
+
+# "let.7a.2.3p" "let.7a.3p"   "let.7a.5p" 
+miRNA1_orig <- data_plotjes %>%
+  ggplot(aes(x = let.7a.2.3p, y = Plaat, colour = concentration_high)) +
+  geom_jitter(width = 0.1, alpha = 0.6, show.legend = FALSE) +  
+  theme_minimal() +
+  scale_color_manual(values = c("low" = "grey50", "high" = "red")) +  # Adjust colors as needed
+  labs(title = "Expression let-7a-2-3p per plate",
+       tag = "1A",
+       x = "Expression let-7a-2-3p",
+       y = "Plate",
+       colour = "MiRNA concentration") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+miRNA2_orig <- data_plotjes %>%
+  ggplot(aes(x = let.7a.3p, y = Plaat, colour = concentration_high)) +
+  geom_jitter(width = 0.1, alpha = 0.6, show.legend = FALSE) +  
+  theme_minimal() +
+  scale_color_manual(values = c("low" = "grey50", "high" = "red")) +  # Adjust colors as needed
+  labs(title = "Expression let-7a-3p per plate",
+       tag = "2A",
+       x = "Expression let-7a-3p",
+       y = "Plate",
+       colour = "MiRNA concentration") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+miRNA3_orig <- data_plotjes %>%
+  ggplot(aes(x = let.7a.5p, y = Plaat, colour = concentration_high)) +
+  geom_jitter(width = 0.1, alpha = 0.6, show.legend = FALSE) +  
+  theme_minimal() +
+  scale_color_manual(values = c("low" = "grey50", "high" = "red")) +  # Adjust colors as needed
+  labs(title = "Expression let-7a-5p per plate",
+       tag = "3A",
+       x = "Expression let-7a-5p",
+       y = "Plate",
+       colour = "MiRNA concentration") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# data_plotjes_WIN "let.7a.2.3p" "let.7a.3p"   "let.7a.5p" 
+miRNA1_WIN <- data_plotjes_WIN %>%
+  ggplot(aes(x = let.7a.2.3p, y = Plaat, colour = concentration_high)) +
+  geom_jitter(width = 0.1, alpha = 0.6, show.legend = FALSE) +  
+  theme_minimal() +
+  scale_color_manual(values = c("low" = "grey50", "high" = "red")) +  # Adjust colors as needed
+  labs(title = "Winsorized expression let-7a-2-3p per plate",
+       tag = "1B",
+       x = "Expression let-7a-2-3p",
+       y = "Plate",
+       colour = "MiRNA concentration") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+miRNA2_WIN <- data_plotjes_WIN %>%
+  ggplot(aes(x = let.7a.3p, y = Plaat, colour = concentration_high)) +
+  geom_jitter(width = 0.1, alpha = 0.6, show.legend = FALSE) +  
+  theme_minimal() +
+  scale_color_manual(values = c("low" = "grey50", "high" = "red")) +  # Adjust colors as needed
+  labs(title = "Winsorized expression let-7a-3p per plate",
+       tag = "2B",
+       x = "Expression let-7a-3p",
+       y = "Plate",
+       colour = "MiRNA concentration") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+miRNA3_WIN <- data_plotjes_WIN %>%
+  ggplot(aes(x = let.7a.5p, y = Plaat, colour = concentration_high)) +
+  geom_jitter(width = 0.1, alpha = 0.6, show.legend = FALSE) +  
+  theme_minimal() +
+  scale_color_manual(values = c("low" = "grey50", "high" = "red")) +  # Adjust colors as needed
+  labs(title = "Winsorized expression let-7a-5p per plate",
+       tag = "3B",
+       x = "Expression let-7a-5p",
+       y = "Plate",
+       colour = "MiRNA concentration") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+plot(miRNA1_orig)
+plot(miRNA1_WIN)
+
+plot(miRNA2_orig)
+plot(miRNA2_WIN)
+
+plot(miRNA3_orig)
+plot(miRNA3_WIN)
+
+
+```
+
+\newpage
+
+# Sanity checks on the data
+
+## Descriptive summary statistics on miRNAs
+
+```{r descriptives original logCPM, tab.cap = "Descriptives original (non-winsorized) TMM-normalized counts (per million) for the first 10 miRNAs in the dataset."}
+set_flextable_defaults(font.size = 7)
+
+desc_orig_counts %>%
+  flextable() %>%
+  autofit(., 0, 0.1)
+
+```
+
+
+```{r descriptives winsorized logCPM, tab.cap = "Descriptives winsorized & TMM-normalized counts (per million) for the first 10 miRNAs in the dataset."}
+
+desc_winsor_counts %>%
+  flextable() %>%
+  autofit(., 0, 0.1)
+
+```
+
+
+In order to highlight differences between the TMM-normalized datasets conditional on winsorization, we included the tables of the original (non-winsorized; top table) and winsorized (bottom table) TMM-normalized miRNA counts with descriptives on the first 10 miRNAs in the data. Summary statistics on both the original and reconstructed (winsorized) TMM-normalized Counts per Million for all miRNAs are available on the DataWiki. Below is the code used to save the corresponding excel file including descriptives for all miRNAs in the data. \
+
+
+```{r constructing summary statistics}
+# Descriptives original counts all microRNAs
+desc_orig_counts_full <- cbind.data.frame(
+  as.data.frame(colnames(TMM_CPM_orig)),
+  psych::describe(TMM_CPM_orig)[, c(3, 4, 13, 5, 8:12)]  %>%
+  round(., 2),
+  sapply(TMM_CPM_orig, quantile, probs = c(.25, .75)) %>% 
+    as.data.frame(.) %>% 
+    round(., 2) %>% 
+    t(.)
+  ) %>% select(., c(1:5, 11, 12, 6:10))
+
+colnames(desc_orig_counts_full)[1] <- "MicroRNA"
+desc_orig_counts_full[, 1] <- gsub(".", "-", desc_orig_counts_full[, 1], fixed = TRUE)
+
+# Descriptives winsorized counts all microRNAs
+desc_winsor_counts_full <- cbind.data.frame(
+  as.data.frame(colnames(TMM_CPM_winsor)),
+  psych::describe(TMM_CPM_winsor)[, c(3, 4, 13, 5, 8:12)]  %>%
+  round(., 2),
+  sapply(TMM_CPM_winsor, quantile, probs = c(.25, .75)) %>% 
+    as.data.frame(.) %>% 
+    round(., 2) %>% 
+    t(.)
+  ) %>% select(., c(1:5, 11, 12, 6:10))
+colnames(desc_winsor_counts_full)[1] <- "MicroRNA"
+desc_winsor_counts_full[, 1] <- gsub(".", "-", desc_winsor_counts_full[, 1], fixed = TRUE)
+
+
+miRNA_descriptives <- list(desc_orig_counts_full, 
+                   desc_winsor_counts_full)
+
+#write.xlsx(miRNA_descriptives, file.path(path, "data_clean/DataWiki/miRNA_GenR_descriptives.xlsx"), 
+#           sheetName = c("counts_TMM", 
+#                         "counts_TMM_WIN"),
+#           colNames = TRUE, rowNames = FALSE,
+#           overwrite = TRUE)
+```
+
+\newpage
+
+## Density plots for normalized data
+
+These plots provide insights into how the preprocessing steps (normalization, winsorization, & log-transformation) affects the distribution of miRNA expression values. By comparing these plots, you can assess how well the technical variations have been controlled for, as well as how the distribution of data changes after each step. Below are the density plots shown for the first 20 miRNAs in both logCPM-datasets. We see some slight differences between the curves of the non-winsorized and winsorized miRNAs, yet nothing too substantial.
+
+```{r check density plots, fig.width = 10, fig.height = 10}
+# Check for first 20 miRNAs in the data
+
+plotDensities(logCPM_orig[, c(1:20)], 
+              main = "Density Plot of Log-CPM After Normalization",
+              legend = "topright")
+
+```
+
+
+```{r check density plots 2, fig.width = 10, fig.height = 10}
+
+plotDensities(logCPM_winsor[, c(1:20)], 
+              main = "Density Plot of Log-CPM After Normalization and Winsorization",
+              legend = "topright")
+
+
+```
+
+
+\newpage
+
+## Principal component analysis
+
+In this section, we performed Principal Component Analysis (PCA) and visualized the results for the first two principal components for both logtransformed datasets. PCA is used to examine the variance in the datasets and to check for any technical or batch-related effects (like those related to plate effects or concentration). In the chapter [Correlation between covariates and miRNA principal components], it becomes clear that the earlier issue with plate 7 and high miRNA concentration levels prior to dilution, is related to PC 2. As such, it is relevant to visualize how much of an effect our solution of winsorizing miRNA expression has on the first two PCs. Each plot includes an explanation of the variance explained by the principal components, allowing to assess how much of the variation in the data is captured by the first two principal components. \
+
+### PCA computation
+Original and Winsorized Datasets: PCA is applied to both logCPM_orig and logCPM_winsor datasets, with the first 10 principal components stored in PCs_orig and PCs_winsor respectively. The table below portrays the proportional variance explained by the first 10 PCs of the original data as well as of the winsorized data. Upon examination we can see that after winsorization, PC 1 explains relatively more variance in the data compared to the other PCs. \
+
+```{r PCA}
+# Perform PCA for all datasets
+# original and winsorized dataset
+pca_orig <- prcomp(logCPM_orig, center = TRUE, scale. = TRUE)
+PCs_orig <- pca_orig$x[, c(1:10)] %>% as.data.frame()
+PCs_orig$Sample.Name <- rownames(PCs_orig)
+
+pca_winsor <- prcomp(logCPM_winsor, center = TRUE, scale. = TRUE)
+PCs_winsor <- pca_winsor$x[, c(1:10)] %>% as.data.frame()
+PCs_winsor$Sample.Name <- rownames(PCs_winsor)
+
+
+
+pca_orig_expl_var <- pca_orig$sdev^2  # Eigenvalues (variance for each PC)
+pca_orig_prop_variance <- pca_orig_expl_var / sum(pca_orig_expl_var)  # Normalize
+
+pca_winsor_expl_var <- pca_winsor$sdev^2  # Eigenvalues (variance for each PC)
+pca_winsor_prop_variance <- pca_winsor_expl_var / sum(pca_winsor_expl_var)  # Normalize
+
+PCs <- c("PC 1", "PC 2", "PC 3", "PC 4", "PC 5",
+         "PC 6", "PC 7", "PC 8", "PC 9", "PC 10")
+PCs_orig_propvar <- pca_orig_prop_variance[1:10] %>% round(., 2)
+PCs_winsor_propvar <- pca_winsor_prop_variance[1:10] %>% round(., 2)
+
+table_PCs <- cbind.data.frame(PCs, PCs_orig_propvar, PCs_winsor_propvar)
+colnames(table_PCs) <- c("PCs", "PCs original data", "PCs winsorized data")
+
+table_PCs %>%
+  flextable() %>%
+  autofit(., 0, 0.1)
+
+```
+
+### Multidimensional Scaling (MDS) plots for sample similarity
+
+**Average Expression Calculation**: The average expression for each sample is calculated using rowMeans() on the log-transformed counts. \
+**PCA Plots**: For each dataset, a PCA plot is created using the first two principal components (PC1 and PC2), with colors representing the average expression. The variance explained by the first two principal components is labeled on the axes. The color gradient is based on the average expression for each sample, with blue representing lower expression and red representing higher expression. \
+From the table above and figures below we can conclude that winsorization has clearly affected the calculcation of principal component 2. The figures clearly portray how some of the extremely low values for PC2 have been corrected for. 
+
+```{r fig.width = 10, fig.height = 10}
+# MDS Plot for visualization of sample similarity, original dataset
+average_expression <- rowMeans(logCPM_orig)
+pca_orig_df <- data.frame(PC1 = pca_orig$x[, 1], 
+                     PC2 = pca_orig$x[, 2], 
+                     AvgExpr = average_expression, 
+                     Sample = rownames(logCPM_orig))
+
+explained_variance <- round(100 * (pca_orig$sdev^2 / sum(pca_orig$sdev^2)), 2)
+
+x_label <- paste0("Principal Component 1 (", explained_variance[1], "% variance explained)")
+y_label <- paste0("Principal Component 2 (", explained_variance[2], "% variance explained)")
+
+fig_PC_orig <- ggplot(pca_orig_df, aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = AvgExpr), size = 3) +
+  scale_color_gradient(low = "blue", high = "red") +
+  ggtitle("PCA Plot of Samples with Average Expression as Color, original logCPM") +
+  xlab(x_label) +
+  ylab(y_label) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(color = "Avg Expression")
+
+# MDS Plot for visualization of sample similarity, winsorized dataset
+average_expression <- rowMeans(logCPM_winsor)
+pca_winsor_df <- data.frame(PC1 = pca_winsor$x[, 1], 
+                          PC2 = pca_winsor$x[, 2], 
+                          AvgExpr = average_expression, 
+                          Sample = rownames(logCPM_winsor))
+
+explained_variance <- round(100 * (pca_winsor$sdev^2 / sum(pca_winsor$sdev^2)), 2)
+
+x_label <- paste0("Principal Component 1 (", explained_variance[1], "% variance explained)")
+y_label <- paste0("Principal Component 2 (", explained_variance[2], "% variance explained)")
+
+fig_PC_winsor <- ggplot(pca_winsor_df, aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = AvgExpr), size = 3) +
+  scale_color_gradient(low = "blue", high = "red") +
+  ggtitle("PCA Plot of Samples with Average Expression as Color, winsorized logCPM") +
+  xlab(x_label) +
+  ylab(y_label) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(color = "Avg Expression")
+
+plot_grid(fig_PC_orig,
+          fig_PC_winsor,
+          ncol = 1)#, #axis = "b",
+         # byrow = TRUE, labels = c("1A", "1B", "2A", "2B", "3A", "3B")
+          #)
+```
+
+
+\newpage
+
+## Covariates
+
+### Descriptives
+
+```{r descriptives covariates}
+# Loop through plate numbers and create dichotomous variables
+for (i in 1:18) {
+  df_tech_covs[[paste0("Plate", i)]] <- ifelse(df_tech_covs$Plaat == i, 1, 0)
+}
+
+df_tech_covs$Preterm_birth <- ifelse(df_tech_covs$GESTBIR <= 37, 1, 0)
+df_tech_covs$Postterm_birth <- ifelse(df_tech_covs$GESTBIR >= 42, 1, 0)
+
+colnames(df_tech_covs)[c(23:25)] <- c("Gestational Age", "Gender", "Birth Weight")
+
+# descriptives table
+desc_covs <- cbind.data.frame(
+  as.data.frame(colnames(df_tech_covs)[c(3, 4, 13:19, 21:22, 23, 25)]),
+  psych::describe(df_tech_covs)[c(3, 4, 13:19, 21:22, 23, 25),  c(2, 3, 4, 13, 5, 8:12)]  %>%
+  round(., 2) )
+
+
+colnames(desc_covs)[1] <- "Variable"
+desc_covs[2, 2:11] <- unlist(desc_covs[2, 2:11]) %>% round(., 0) %>% as.factor(.)
+
+
+# number of maless
+n_males <- df_tech_covs %>%
+  filter(., Gender == 1) %>%
+  nrow(.)
+# number of preterms
+n_preterms <- df_tech_covs %>%
+  filter(., Preterm_birth == 1) %>%
+  nrow(.)
+# number of postterms
+n_postterms <- df_tech_covs %>%
+  filter(., Postterm_birth == 1) %>%
+  nrow(.)
+
+```
+
+
+Core covariates for the miRNA dataset are presented below. This is not an exhaustive list and additional covariates may need to be added based on specific analyses performed (e.g. including prenatal smoking as covariate or excluding birth weight, depending on the specific research question examined). A brief description of the covariates: \
+
+1. **Technical covariates** \
+*Definetly include these in your analyses* \
+**Haemolysis**: Haemolysis is the rupturing of red blood cells and the release of their contents into surrounding fluid and may influence expression. Haemolysis levels in our dataset are scored from 0 to 3 with 0 corresponding to no haemolysis and 3 to the most haemolysis. For more on haemolysis in our data, see the chapter [Haemolysis check] \
+**Concentration**: MiRNA concentration prior to dilution of the sample with a buffer in the lab-process. See also the chapter [Reasons for winsorization]. \
+**Plate**: The plate on which the sample was located. See also the chapter [Reasons for winsorization]. \
+**White blood cell-type counts**: White blood cell-type proportions as estimated in the methylation data we have for most of the participants also present in our miRNA dataset. For 1622 out of 1695 participants, data is present on Bcell, CD4T-, CD8T-, granular-, monocyte-, NK-, and nRBC-cell types. Hence, missing data for cell type counts should be imputed. \
+2. **Other variables** \
+*Optional depending on the nature of your study* \
+**Population stratification & ancestry**: This dataset was selected on European ancestry, nevertheless we examined genetic principal components 1 (corresponds to African ethnicity) and 2 (corresponds to Asian ethnicity) [@medina-gomez_challenges_2015]. \
+**Gestational age**: Gestational age at birth. Pregnant mothers were received in the first trimester of pregnancy for fetal ultrasound at our research center [@gaillard_tracking_2014]. If mothers had known and reliable first day of their last menstrual period (LMP), and a regular menstrual cycle of 28 (+/- 4 days), the clinical estimate of gestational age was based on LMP [@salontaji_gestational_2024] at the time of visit. If mothers did not know their exact date of LMP, or had an irregular menstrual cycle, gestational age was established through ultrasound examination. Gestational age at birth was assessed from midwife or obstetric records [@salontaji_gestational_2024]. \
+**Birth weight**: Weight measured at birth. \
+**Gender**: Biological sex. Our sample contains `r n_males` males, which corresponds to `r round((n_males / 1695 * 100), 2)`% of the total miRNA dataset. \
+
+
+Basic descriptives for these covariates are provided below. \
+
+\newpage
+
+```{r }
+
+desc_covs %>%
+  flextable() %>%
+  autofit(., 0, 0.1)
+
+```
+
+Based on the descriptives table, we can conclude that CD8T has the lowest mean proportion of all cell types (.04), followed by BCell (.06), NK (.07), and Mono (.09). \
+
+All participants were selected on their European ancestry and this is reflected in the scores participants have on genetic principal components 1 and 2. In line with @medina-gomez_challenges_2015, these genetic principal components correspond to African and Asian ethnicity. However the scores on these genetic PCs indicate that ethnicities other than European are not highly prevalent in the data. We also included rescaled variables based on these two genetic PCs the correlation matrix in the following section [Correlation between covariates and miRNA principal components] \
+
+The number of participants in our data that can be considered a preterm birth (gestational age <= 37), is `r n_preterms` or about `r round((n_preterms / 1695 * 100), 2)`%. Similarly,  the number of participants in our data that can be considered a postterm birth (gestational age >= 42), is `r n_postterms` or about `r round((n_postterms / 1695 * 100), 2)`%.\
+
+\newpage
+
+### Correlation between covariates and miRNA principal components
+
+Below we show the correlation matrices for the covariates with the principal components based on the original logCPM- as well as the winsorized logCPM-data. Only significant correlations are portrayed. \
+Notable in the original data is the correlation of PC2 with miRNA concentration prior to dilution as well as with plate 7. These correlations are quite high. After winsorization, the correlation between PC2 and miRNA concentration changes substantially, although the correlation between PC2 and plate 7 remains constant. MiRNA concentration also shows a correlation to haemolysis. For further elaboration on how miRNA concentration and plate 7 may have affected miRNA expression, see the chapters [Reasons for winsorization] and [Plate 7 issues addressed by winsorization]. \
+Regarding white blood cell counts, we can see that NK shows the lowest correlation with gestational age (-.034), followed by CD8T (-.039), nRBC (-.042), and Mono (-.066). \
+
+```{r correlation PCs with covariates, include = TRUE, fig.width = 15, fig.height = 15}
+
+# Correlations with PCs
+make_cor_matrix(df_tech_covs[, c(3, 4, 13:19, 21:22, 26:27, 23:25, 34, 45, 46, 47)], PCs_orig[, c(1:10)],
+                "Correlation matrix Covariates & PCs Original data")
+```
+
+\newpage
+
+```{r correlation PCs with covariates WINSOR PCs, include = TRUE, fig.width = 15, fig.height = 15}
+
+make_cor_matrix(df_tech_covs[, c(3, 4, 13:19, 21:22, 26:27, 23:25, 34, 45, 46, 47)], PCs_winsor[, c(1:10)], "Correlation matrix Covariates & PCs Winsorized data")
+
+```
+
+
+\newpage
+
+## Haemolysis check
+
+In this step, the potential effects of haemolysis on miRNA expression were explored. Haemolysis is the rupturing of red blood cells and the release of their contents into surrounding fluid and may influence expression. Haemolysis levels in our dataset are scored from 0 to 3 with 0 corresponding to no haemolysis and 3 to the most haemolysis. 
+
+[MiRNAs commonly associated with haemolysis](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0153200) (miR-23a-3p, miR-451a; established haemolysis-associated miRNAs [@shah_comparison_2016]) were examined for their relationship with haemolysis. Multiple studies have used qRT-PCR-generated miRNA data to calculate a miR-ratio [@kirschner_impact_2013; @shah_comparison_2016; @pizzamiglio_methodological_2017; @aguilera-rojas_systematic_2022; @smith_haemolysis_2022]. In short, this miR-ratio is calculated based on the red blood cell-enriched miR-451a and the reference miRNA miR-23a-3p. These studies evaluate the relative abundance of miR-451a (which is highly expressed in red blood cells) and miR-23a-3p (which is relatively unaffected by haemolysis). This method is based on the observation that haemolysis increases levels of miRNAs from red blood cells (like miR-451a), while leaving stable reference miRNAs unchanged. \
+An issue with applying this concept here is that these studies are based on miRNA data generated through qRT-PCR, whereas we have sequenced miRNAs that subsequently went through TMM-normalization and log-transformation. @smith_haemolysis_2022 gets around this issue by calculating a sequencing-based proxy with log CPM values of these miRNAs as input of the same formula. It should be noted that @aguilera-rojas_systematic_2022 acknowledge that a miRNA sequencing analysis of red blood cells would be required. Although a complete study is beyond the scope of this document, we can perform some surface-level checks. \
+Another issue with applying this concept is that the terms ratio and delta seem to be used interchangeably in these studies. Studies explicitly refer to a ratio and subsequently show the formula of a delta between the CPM values of a (would-be) non-haemolysis-affected miRNA minus that of a (more probably) haemolysis-affected miRNA. For this delta, the general formula applied is: miR-23a-3p - miR-451a. Where an outcome >= 7 would correspond to high risk of haemolysis and an outcome of < 5 would correspond to a low risk of haemolysis [@smith_haemolysis_2022]. However, they mention that the Qiagen protocol for haemolysis detection considers only above or below 7 as an indicator of haemolysis, with a delta of 7 as borderline. The exact cut-off to be used for any ratio or delta is a problem because the delta we calculated below consistently shows to be a negative number for all participants. This is likely a result of the TMM-normalization and subsequent log-transformation applied in our QC-process. @smith_haemolysis_2022 went on to calculate a 20 miRNA signature indicating haemolysis, however that is beyond the scope of this document. What we can do is calculate a (actual) ratio based on the formula: miR-23a-3p / miR-451a; and examine that in concert with a cut-off of an absolute delta and relate both to the haemolysis-scores that we have for our samples. @smith_haemolysis_2022 did this as well and the correlation between the delta based on sequenced data and based on qRT-PCR data was 0.82.
+
+The ratio and delta of red blood cell-enriched miR-451a to the reference microRNA miR-23a-3p was calculated based on their logtransformed CPM expression levels in the original data. The idea is to see if the miRNA ratio and delta differ for varying levels of haemolysis. If the ratio or delta between miR-451a and miR-23a-3p indicates lower expression levels for the red blood cell-affected miR-451a relative to the unaffected miR-23a-3p, this could suggest that haemolysis is affecting the miRNA levels in samples. 
+
+```{r haemolysis check, fig.width = 10, fig.height = 10, fig.cap = "Distribution of haemolysis per plate."}
+## Check on haemolysis
+haemo_miRNAs <- c("miR.451a", "miR.324.5p", "miR.425.5p", "miR.191.5p", "miR.23a.3p", "miR.150.5p", "miR.29a.3p") 
+#haemo_miRNAs %in% colnames(logCPM_orig)
+
+haemo_miRNAs_subset <- logCPM_orig[, c(haemo_miRNAs)] 
+haemo_miRNAs_subset$Sample.Name <- rownames(haemo_miRNAs_subset)
+haemo_miRNAs_subset <- haemo_miRNAs_subset %>%
+  left_join(., df_tech_covs, by = "Sample.Name")
+
+miRNA_haemo <- haemo_miRNAs_subset$miR.451a
+miRNA <- haemo_miRNAs_subset$miR.150.5p # miR.451a
+
+
+haemo_miRNAs_subset$miR23a.miR451.ratio <- haemo_miRNAs_subset$miR.23a.3p / miRNA_haemo
+haemo_miRNAs_subset$miR23a.miR451.delta <- haemo_miRNAs_subset$miR.23a.3p - miRNA_haemo
+haemo_miRNAs_subset$miR23a.miR451.delta.seven <- ifelse(abs(haemo_miRNAs_subset$miR23a.miR451.delta) >= 7, 1, 0)
+haemo_miRNAs_subset$miR23a.miR451.delta.five <- ifelse(abs(haemo_miRNAs_subset$miR23a.miR451.delta) < 5, 1, 0)
+
+# Haemolysis plots
+haemo1 <- haemo_miRNAs_subset %>%
+  ggplot(., mapping = aes(x = miRNA_haemo, y = miR.23a.3p, colour = as.factor(Haemolysis))) +
+  geom_point(aes(alpha = as.factor(Haemolysis))) +  
+  theme_minimal() +
+  scale_color_manual(values = c("0" = "gray", "1" = "yellow", "2" = "green", 
+                                "3" = "blue", "9" = "red")) +
+  scale_alpha_manual(values = c("0" = 0.2, "1" = 0.8, "2" = 1, 
+                                "3" = 1, "9" = 1)) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Haemolysis in miR-451a vs. miR-23a-3p",
+       x = "MiR-451a",
+       y = "MiR-23a-3p",
+       colour = "Haemolysis",
+       alpha = "Haemolysis")
+
+haemo2 <- haemo_miRNAs_subset %>%
+  ggplot(., mapping = aes(x = miRNA_haemo, y = miR.23a.3p, colour = as.factor(miR23a.miR451.delta.seven))) +
+  geom_point(alpha = 0.6) +  
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Absolute miR-Delta in miR-451a vs. miR-23a-3p, divided by |delta| cut-off >= 7",
+       x = "MiR-451a",
+       y = "MiR-23a-3p",
+       colour = "|Delta| >= 7")
+
+haemo3 <- haemo_miRNAs_subset %>%
+  ggplot(aes(x = miRNA_haemo, y = miR.23a.3p, colour = miR23a.miR451.ratio)) +
+  geom_point(alpha = 0.6) +  
+  theme_minimal() +
+  scale_color_gradient(low = "blue", high = "red") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(title = "MiR-Ratio in miR-451a vs. miR-23a-3p",
+       x = "MiR-451a",
+       y = "MiR-23a-3p",
+       colour = "MiR-Ratio")
+
+# Weird plate shit
+haemo4 <- haemo_miRNAs_subset %>%
+  ggplot(aes(x = miRNA_haemo, y = Plaat, colour = as.factor(Haemolysis))) +
+  geom_jitter(width = 0.1, aes(alpha = as.factor(Haemolysis))) +
+  theme_minimal() +
+  scale_color_manual(values = c("0" = "gray", "1" = "yellow", "2" = "green", 
+                                "3" = "blue", "9" = "red")) +
+  scale_alpha_manual(values = c("0" = 0.3, "1" = 0.8, "2" = 1, 
+                                "3" = 1, "9" = 1)) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Haemolysis vs. Plate",
+       x = "Expression levels of miR-451a",
+       y = "Plate",
+       colour = "Haemolysis",
+       alpha = "Haemolysis")
+haemo4
+
+```
+
+Looking at the above plot of haemolysis distribution over plates, we can conclude that this distribution seems to be quite random and no plate-specific effect seems present. The plots below shows the expression levels of samples on the two miRNAs involved in the calculation of the miR-ratio (plot 3) and miR-delta (plot 2) together with the known haemolysis levels (plot 1). From comparing plot 1 to plot 2, we can derive that, although far from perfectly matched, the absolute cut-off of >=7 in the miR-delta (plot 2) does show some overlap with the haemolysis levels as we know them to be (plot 1). The miR-ratio (plot 3) is shown to be lower in samples with any haemolysis compared to no haemolysis, although this does not appear to be a linear relation. However, the visualizations show that the samples with the highest levels of haemolysis (plot 1 in blue) seem to be quite randomly placed when comparing to both the miR-delta and the miR-ratio.
+
+
+```{r clusterplotje haemo, fig.width = 10, fig.height = 15}
+plot_grid(haemo1, haemo2, haemo3,
+  ncol = 1, axis = "b",
+  byrow = TRUE, labels = c("1", "2", "3")
+          )
+
+
+```
+
+
+```{r table ratiodelta, tab.cap = "Median miR-ratio and -delta per haemolysis-level."}
+
+a <- aggregate(miR23a.miR451.ratio ~ Haemolysis, data = haemo_miRNAs_subset, median) # ratio is lower for samples with any haemolysis, not linear
+b <- aggregate(miR23a.miR451.delta ~ Haemolysis, data = haemo_miRNAs_subset, median) # delta is higher for samples with any haemolysis, not linear
+
+c <- left_join(a, b, by = "Haemolysis")
+colnames(c)[c(2, 3)] <- c("miR-ratio", "miR-delta")
+
+c %>%
+  flextable() %>%
+  autofit(., 0, 0.1)
+```
+
+When examining the miR-ratio and -delta in the table above, we can see that there is not a clear linear relation between neither haemolysis-levels and the miR-Ratio, nor haemolysis-levels and miR-Delta. These analyses suggest that haemolysis may not have a very large influence on miRNA expression, as it was not associated with miRNAs known to be related to haemolysis. However, due to the limited number of participants with high haemolysis-levels (4 with haemolysis-level 3), this approach may be underpowered in our sample.
+
+\newpage
+
+# References 
+
+```{r create_r_references, include = FALSE}
+papaja::r_refs(file = "r-references.bib")
+
+```
