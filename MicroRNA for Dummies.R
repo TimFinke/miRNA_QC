@@ -173,7 +173,7 @@ df <- df %>% left_join(., df_QCres, by = c("Sample.Name", "Well"))
 
 # save original data
 original_data <- df[, c(2108, 1:2103)]
-write.xlsx(original_data, file.path(path, "data_clean/archived/miRNA_GenR_original", format(Sys.Date(), "%d_%m_%Y"), ".xlsx"), 
+write.xlsx(original_data, file.path(path, paste0("data_clean/archived/miRNA_GenR_original_", format(Sys.Date(), "%d_%m_%Y"), ".xlsx")), 
            colNames = TRUE, rowNames = FALSE,
            overwrite = FALSE)
 
@@ -184,7 +184,7 @@ covariate_cols <- c("IDC", "Sample.Name", "Plaat", "Well",
                     "RawTotalCounts", "RSD", "indexplaat")
 covariates <- df[, covariate_cols]
 
-write.xlsx(covariates, file.path(path, "data_clean/Midas/miRNA_GenR_covariates", format(Sys.Date(), "%d_%m_%Y"), ".xlsx"),
+write.xlsx(covariates, file.path(path, paste0("data_clean/Midas/miRNA_GenR_covariates_", format(Sys.Date(), "%d_%m_%Y"), ".xlsx")),
            sheetName = c("covariates"),
            colNames = TRUE, rowNames = FALSE,
            overwrite = FALSE)
@@ -244,7 +244,7 @@ colnames(cleaned_counts)[1] <- "Sample.Name"
 cleaned_counts <- left_join(cleaned_counts, original_data[, c(1:2)], by = "Sample.Name")[, c(2085, 1:2084)]
 
 # save cleaned raw counts for archive
-write.xlsx(cleaned_counts, file.path(path, "data_clean/archived/miRNA_GenR_cleaned", format(Sys.Date(), "%d_%m_%Y"), ".xlsx"), 
+write.xlsx(cleaned_counts, file.path(path, paste0("data_clean/archived/miRNA_GenR_cleaned_", format(Sys.Date(), "%d_%m_%Y"), ".xlsx")), 
            colNames = TRUE, rowNames = FALSE,
            overwrite = FALSE)
 
@@ -379,11 +379,11 @@ colnames(logCPM_orig)[1] <- "Sample.Name"
 logCPM_orig <- left_join(logCPM_orig, original_data[, c(1:2)], by = "Sample.Name")[, c(2085, 1:2084)]
 
 # save data
-write.xlsx(TMM_CPM_orig, file.path(path, "data_clean/Midas/miRNA_GenR_counts_TMM", format(Sys.Date(), "%d_%m_%Y"), ".xlsx"), 
+write.xlsx(TMM_CPM_orig, file.path(path, paste0("data_clean/Midas/miRNA_GenR_counts_TMM_", format(Sys.Date(), "%d_%m_%Y"), ".xlsx")), 
            colNames = TRUE, rowNames = FALSE,
            overwrite = FALSE)
 
-write.xlsx(logCPM_orig, file.path(path, "data_clean/Midas/miRNA_GenR_counts_TMM_logCPM", format(Sys.Date(), "%d_%m_%Y"), ".xlsx"), 
+write.xlsx(logCPM_orig, file.path(path, paste0("data_clean/Midas/miRNA_GenR_counts_TMM_logCPM_", format(Sys.Date(), "%d_%m_%Y"), ".xlsx")), 
            colNames = TRUE, rowNames = FALSE,
            overwrite = FALSE)
 
@@ -549,11 +549,11 @@ colnames(logCPM_winsor_save)[1] <- "Sample.Name"
 logCPM_winsor_save <- left_join(logCPM_winsor_save, original_data[, c(1:2)], by = "Sample.Name")[, c(2085, 1:2084)]
 
 # saving datasets
-write.xlsx(TMM_CPM_winsor_save, file.path(path, "data_clean/Midas/miRNA_GenR_counts_TMM_WIN", format(Sys.Date(), "%d_%m_%Y"), ".xlsx"), 
+write.xlsx(TMM_CPM_winsor_save, file.path(path, paste0("data_clean/Midas/miRNA_GenR_counts_TMM_WIN_", format(Sys.Date(), "%d_%m_%Y"), ".xlsx")), 
            colNames = TRUE, rowNames = FALSE,
            overwrite = FALSE)
 
-write.xlsx(logCPM_winsor_save, file.path(path, "data_clean/Midas/miRNA_GenR_counts_TMM_WIN_logCPM", format(Sys.Date(), "%d_%m_%Y"), ".xlsx"), 
+write.xlsx(logCPM_winsor_save, file.path(path, paste0("data_clean/Midas/miRNA_GenR_counts_TMM_WIN_logCPM_", format(Sys.Date(), "%d_%m_%Y"), ".xlsx")), 
            colNames = TRUE, rowNames = FALSE,
            overwrite = FALSE)
 
@@ -695,7 +695,7 @@ miRNA_descriptives <- list(desc_orig_counts_full,
                            desc_winsor_counts_full)
 
 # save data
-write.xlsx(miRNA_descriptives, file.path(path, "data_clean/DataWiki/miRNA_GenR_descriptives", format(Sys.Date(), "%d_%m_%Y"), ".xlsx"), 
+write.xlsx(miRNA_descriptives, file.path(path, paste0("data_clean/DataWiki/miRNA_GenR_descriptives_", format(Sys.Date(), "%d_%m_%Y"), ".xlsx")), 
            sheetName = c("counts_TMM", 
                          "counts_TMM_WIN"),
            colNames = TRUE, rowNames = FALSE,
